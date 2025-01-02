@@ -114,19 +114,21 @@ class Seiko:
 
         points = self.img[idy, idx]  # 获取4个整数点的像素值
 
-        radio_x = 1-(x-xf)  # 确定左方权重
-        radio_y = 1-(y-yf)  # 确定上方权重
+        radiox=np.abs(x-idx)
+        radiox[:,[0,1,2,3]]=radiox[:,[2,3,1,0]]
+        radioy=np.abs(y-idy)
+        radioy[:,[0,1,2,3]]=radioy[:,[2,0,3,1]]
+        
+        # radio=radiox*radioy
+        radio=np.einsum('ik,ik->ik',radiox,radioy)
 
-        diffx = np.abs(radio_x-cornerx[None, :])  # 右方权重
-        diffy = np.abs(radio_y-cornery[None, :])  # 下方权重
-        raido = (diffx*diffy)
-
-        values = (points*raido[:, :, None]).sum(axis=1)
+        # values = (points*radio[:, :, None]).sum(axis=1)
+        values=np.einsum('ijk,ij->ik',points,radio)
         return values
 
 
 if __name__ == '__main__':
 
     path = r'imgs\lun2.png'
-    s = Seiko(path, 12)
+    s = Seiko(path, 6)
     s.run()
