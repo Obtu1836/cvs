@@ -9,11 +9,11 @@ np.set_printoptions(precision=4, suppress=True)
 1 brisk提取关键点 然后匹配 等常规操作
 2 确定最终的形状以及忽视照片的相对位置关系 思路是 通过关键点 确定出 M
   然后通过M 把第一张图全图投影到第二张图 计算顶点坐标 如果xmin<0&ymin<0 调换一下
-  img1<->img2,kp1<->kp2 重新计算 M
+  img1<->img2,src_point,dst_point<->dst_point,src-point 重新计算 M
 3 根据第二步计算出M 将img1 warp 得到 reslut 这个中间状态,然后比较img_img和
   img2的面积大小 如果img2.size<reslut.size 调换一下顺序 img2<->reslut,
   这样做的原因总能保持 img2这个变量代表的是面积是相对大的 方便后续操作
-4 因为img2是大的 所以reslut这个就是小的 进入super函数 将reslut通过函数
+4 因为img2是大的 所以reslut这个就是小的 进入image_fushion函数 将reslut通过函数
   cv2.copyMakeBorder扩展到和img2相同大小
 
   a np.where(big==0,big,small)这个方法 可以找到2个图像交集(重叠的部分)
@@ -25,8 +25,6 @@ np.set_printoptions(precision=4, suppress=True)
     轮廓的距离 根据这些距离加权 使图像加权融合
 
 '''
-cv2.pointPolygonTest
-
 
 class Seiko:
     def __init__(self, path1, path2, draw_match=False, draw_contours=False):
@@ -89,7 +87,7 @@ class Seiko:
         if self.img2.size < result.size:  # 比较大小
             print('img2 <-> result')
             self.img2, result = result, self.img2  # 保持img2最大
-        res = self.super(self.img2, result)
+        res = self.image_fushion(self.img2, result)
 
         self.show(res, 'res')
 
@@ -106,7 +104,7 @@ class Seiko:
 
         return xmin, xmax, ymin, ymax, m
 
-    def super(self, big, small):
+    def image_fushion(self, big, small):
 
         res = big.copy()
         big_mask = self.binarization(big)
@@ -189,8 +187,8 @@ class Seiko:
 
 if __name__ == '__main__':
 
-    img1 = r'imgs\IMG_1059.JPG'
-    img2 = r'imgs\IMG_1058.JPG'
+    img1 = r'/Users/yan/Code/cvs/imgs/left.png'
+    img2 = r'/Users/yan/Code/cvs/imgs/right.png'
 
     draw_match = True
     draw_contours = True
