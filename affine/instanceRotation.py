@@ -115,9 +115,9 @@ class Seiko:
         points = self.img[idy, idx]  # 获取4个整数点的像素值
 
         radiox=np.abs(x-idx)
-        radiox[:,[0,1,2,3]]=radiox[:,[2,3,1,0]]
+        radiox[:,:]=radiox[:,[2,3,1,0]]
         radioy=np.abs(y-idy)
-        radioy[:,[0,1,2,3]]=radioy[:,[2,0,3,1]]
+        radioy[:,:]=radioy[:,[2,0,3,1]]
         
         # radio=radiox*radioy
         radio=np.einsum('ik,ik->ik',radiox,radioy)
@@ -129,6 +129,6 @@ class Seiko:
 
 if __name__ == '__main__':
 
-    path = r'imgs\lun2.png'
-    s = Seiko(path, 6)
+    path = r'imgs/lun2.png'
+    s = Seiko(path, 1)
     s.run()
