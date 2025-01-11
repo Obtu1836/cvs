@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
-import sys
+import logging
+import argparse
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -24,15 +25,21 @@ np.set_printoptions(precision=4, suppress=True)
     然后根据cv2.pointPolygonTest这个函数 计算这些图像的坐标到left和right
     轮廓的距离 根据这些距离加权 使图像加权融合
 
-'''
+    findHomography和getPerspectiveTransform 都是通过点来确定透视变换矩阵m 
+    其中findHomography是通过一系列的点 getPerspectiveTransform可以通过4个点 
+    warpwarpPerspective函数 是通过m 变换对应的图像
+    perspectiveTransform函数 是通过m 变换对应坐标
 
+
+'''
 class Seiko:
-    def __init__(self, path1, path2, draw_match=False, draw_contours=False):
+    def __init__(self, path1, path2, draw_match, draw_contour, kp_length):
 
         self.img1 = cv2.imread(path1)
         self.img2 = cv2.imread(path2)
-        self.draw_match = draw_match
-        self.draw_contours = draw_contours
+        self.draw_mt = draw_match
+        self.draw_cr = draw_contour
+        self.kp_length = kp_length
 
     def kp_desc(self):
         brisk = cv2.BRISK.create()
@@ -62,22 +69,21 @@ class Seiko:
 
         matches, kp1, kp2 = self.kp_desc()
         good, mask = self.good_mask(matches)
+        assert len(good) > self.kp_length, '匹配点不足'
 
-        if self.draw_match:
+        if self.draw_mt:
             ps = cv2.drawMatchesKnn(self.img1, kp1, self.img2, kp2, matches, None, None, (255, 0, 0),
                                     mask, cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             self.show(ps, 'matches')
 
-        if len(good) <= 5:
-            sys.exit()
-
+        
         src_point = np.float32([kp1[m.queryIdx].pt for m in good])
         dst_point = np.float32([kp2[m.trainIdx].pt for m in good])
 
         xmin, xmax, ymin, ymax, m = self.cal_m(src_point, dst_point)
 
         if xmin < 0 and ymin < 0:  # 如果 xmin<0 and ymin<0 重新投影一次
-            print('img1 <-> img2')
+            logging.info('img1<-->img2')
             self.img1, self.img2 = self.img2, self.img1  # 调换图像
             src_point, dst_point = dst_point, src_point  # 调换关键点
             xmin, xmax, ymin, ymax, m = self.cal_m(src_point, dst_point)
@@ -85,7 +91,7 @@ class Seiko:
         result = cv2.warpPerspective(self.img1, m, (xmax, ymax))  # 中间状态
 
         if self.img2.size < result.size:  # 比较大小
-            print('img2 <-> result')
+            logging.info('img<-->result')
             self.img2, result = result, self.img2  # 保持img2最大
         res = self.image_fushion(self.img2, result)
 
@@ -113,7 +119,7 @@ class Seiko:
 
         res[:sh, :sw] = np.maximum(res[:sh, :sw], small)
 
-        small_x = cv2.copyMakeBorder(
+        small_x = cv2.copyMakeBorder( #将small图像 扩展成和big大小一样的图片
             small, 0, bh-sh, 0, bw-sw, cv2.BORDER_CONSTANT, None, (0, 0, 0))
         small_mask = self.binarization(small_x)
 
@@ -129,14 +135,15 @@ class Seiko:
         '''big-重叠=非重叠部分的轮廓'''
 
         # 计算距离 采用apply_along_axis bing没有比for循环加快运行速度！
-        pointx, pointy = np.where(coincidence == 255)[:2]
+        pointy, pointx = np.where(coincidence == 255)
         # cv2.pointPolygonTest这个函数点的坐标需要float
         points = np.c_[pointx, pointy].astype(np.float32)
         dis = np.apply_along_axis(
             self.cal_dis, 1, points, left_contours, right_contours)
-        point_dis = (np.c_[points, dis]).astype(np.int32)
+        dis=dis/dis.sum(axis=1)[:,None]
+        dis[:,[0,1]]=dis[:,[1,0]]
 
-        if self.draw_contours:
+        if self.draw_cr:
 
             sk = res.copy()
             cv2.drawContours(sk, [left_contours], 0, (0, 255, 0), 2)
@@ -144,11 +151,10 @@ class Seiko:
             cv2.drawContours(sk, [right_contours], 0, (0, 0, 255), 2)
             self.show(sk, 'all_contours')
 
-        for x, y, s, b in point_dis:  # 距离越远 权重越小 成反比
-            ps = 1 if s+b == 0 else s/(s+b)
-            pb = 1-ps
-            res[x, y] = np.clip((small_x[x, y]*pb+big[x, y]*ps).
-                                astype(np.int32), a_min=0, a_max=255)
+        s_value = small_x[pointy, pointx]
+        b_value = big[pointy, pointx]
+        res[pointy, pointx] = np.clip(
+            s_value*dis[:, 0][:, None]+b_value*dis[:, 1][:, None], 0, 255).astype(np.int32)
 
         return res
 
@@ -161,9 +167,8 @@ class Seiko:
             assert len(cons) >= 1, 'mask failed'
 
         except AssertionError as e:
-            print(e)
+            logging.info(e)
             self.show(img, 'error! contours not found')
-            sys.exit()
         cons = sorted(cons, key=cv2.contourArea)[::-1][0]
         return cons
 
@@ -175,8 +180,8 @@ class Seiko:
 
     def cal_dis(self, arr, scons, bcons):  # 计算距离 arr的type=float
 
-        sdis = -cv2.pointPolygonTest(scons, arr[::-1], True)
-        bdis = -cv2.pointPolygonTest(bcons, arr[::-1], True)
+        sdis = -cv2.pointPolygonTest(scons, arr, True)
+        bdis = -cv2.pointPolygonTest(bcons, arr, True)
 
         return sdis, bdis
 
@@ -187,11 +192,19 @@ class Seiko:
 
 if __name__ == '__main__':
 
-    img1 = r'/Users/yan/Code/cvs/imgs/left.png'
-    img2 = r'/Users/yan/Code/cvs/imgs/right.png'
+    parse = argparse.ArgumentParser()
+    parse.add_argument('--path1', type=str,
+                       default=r'imgs\left.png')
+    parse.add_argument('--path2', type=str,
+                       default=r"imgs\right.png")
+    parse.add_argument('--draw_match', action='store_true', default=False)
+    parse.add_argument('--draw_contour', action='store_true', default=False)
+    parse.add_argument('--kp_length', type=int, default=4)
+    opt = parse.parse_args()
 
-    draw_match = True
-    draw_contours = True
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        datefmt='%Y-%m-%d  %H:%M:%S ')
 
-    s = Seiko(img1, img2, draw_match, draw_contours)
+    s = Seiko(**vars(opt))
     s.run()

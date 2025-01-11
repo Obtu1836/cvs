@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import argparse
 
 '''
 1 提取轮廓 将轮廓内的坐标点(xs,ys)--->xys记录 拟合出圆心位置(cx,cy)
@@ -115,9 +116,9 @@ class Seiko:
         points = self.img[idy, idx]  # 获取4个整数点的像素值
 
         radiox=np.abs(x-idx)
-        radiox[:,:]=radiox[:,[2,3,1,0]]
+        radiox[:,[[0,1],[2,3]]]=radiox[:,[[2,3],[0,1]]]
         radioy=np.abs(y-idy)
-        radioy[:,:]=radioy[:,[2,0,3,1]]
+        radioy[:,[[0,3],[1,2]]]=radioy[:,[[1,2],[0,3]]]
         
         # radio=radiox*radioy
         radio=np.einsum('ik,ik->ik',radiox,radioy)
@@ -129,6 +130,12 @@ class Seiko:
 
 if __name__ == '__main__':
 
-    path = r'imgs/lun2.png'
-    s = Seiko(path, 1)
+    parse = argparse.ArgumentParser()
+    parse.add_argument('--path', type=str,
+                       default=r'imgs\lun2.png')
+    parse.add_argument('--angle',type=int,default=6,help='rotation angle')
+
+    opt = parse.parse_args()
+
+    s = Seiko(**vars(opt))
     s.run()
